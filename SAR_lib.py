@@ -181,8 +181,10 @@ class SAR_Indexer:
     ###   SIMILITUD SEMANTICA   ###
     ###                         ###
     ###############################
+    
+    # LO COMENTO PORQUE DA ERRORES
 
-            
+    '''        
     def load_semantic_model(self, modelname:str=SEMANTIC_MODEL):
         """
     
@@ -194,7 +196,7 @@ class SAR_Indexer:
             print(f"loading {modelname} model ... ",end="")
             self.model = sentence_transformers.SentenceTransformer(modelname)
             print("done!")
-            
+    '''        
 
     def update_embeddings(self, txt:str, artid:int):
         """
@@ -219,16 +221,12 @@ class SAR_Indexer:
 
     def create_kdtree(self):
         """
-        
         Crea el tktree utilizando la información de los embeddings
         Solo se debe crear una vez despues de indexar todos los documentos
-        
         """
         print(f"Creating kdtree {len(self.embeddings)}...", end="")
-	self.kdtree = KDTree(self.embeddings)
+        self.kdtree = KDTree(self.embeddings)
         print("done!")
-
-
         
         
     def solve_semantic_query(self, query:str):
@@ -273,15 +271,21 @@ class SAR_Indexer:
         # 1
         # 2
         # 3
-        
-     
+
 
     ###############################
     ###                         ###
     ###   PARTE 1: INDEXACION   ###
     ###                         ###
     ###############################
+    
+    ###############################
+    ###                         ###
+    ###     JAIME Y NACHO       ###
+    ###                         ###
+    ###############################
 
+    # Método auxiliar ya hecho
     def already_in_index(self, article:Dict) -> bool:
         """
 
@@ -293,7 +297,7 @@ class SAR_Indexer:
         """
         return article['url'] in self.urls
 
-
+    # Método auxiliar ya hecho
     def index_dir(self, root:str, **args):
         """
 
@@ -330,7 +334,7 @@ class SAR_Indexer:
         ## COMPLETAR SI ES NECESARIO FUNCIONALIDADES EXTRA ##
         #####################################################
         
-        
+    # Método auxiliar ya hecho    
     def parse_article(self, raw_line:str) -> Dict[str, str]:
         """
         Crea un diccionario a partir de una linea que representa un artículo del crawler
@@ -356,36 +360,74 @@ class SAR_Indexer:
 
         return article
 
+    # Método para indexar que tenemos que completar
+    def index_file(self, filename: str):
+        '''
+        El objetivo de index_file crear un índice para todos los documentos JSON que a su
+        vez contienen artículos dentro. 
+        Es fácil observar que por cada documento tendremos
+        que asignar un entero en self.docs y luego por cada lína desde la 1 hasta la n
+        tendremos que asignar otro entero al artículo en self.articles.
+        Por tanto lo que vamos a hacer es recorrer estos documentos e ir asignando pares
+        clave valor al self; por ejemplo, para el documento 1 línea 7 tendremos como clave 
+        docid = 1 y artid = 7 y así podremos diferenciarlo de los demás.
+        '''
+        # Accedemos a los valores de self.docs para ver si ya ha sido procesado
+        if filename not in self.docs.values():
+            docid = len(self.docs)  # Asignamos valor con len para que sea incremental en orden
+            self.docs[docid] = filename # Guardamos en self.docs con clave docid
+        else:
+            # Si el fichero ya ha sido procesado seguimos
+            return
 
-    def index_file(self, filename:str):
-        """
+        docid = list(self.docs.keys())[-1]  # Cogemos el último docid asignado
 
-        Indexa el contenido de un fichero.
+        # Reccoremos cada línea del JSON
+        for i, line in enumerate(open(filename, encoding="utf-8")):
+            article = self.parse_article(line)
+            '''
+            if self.already_in_index(article):
+                continue    # Saltamos los artículos ya indexados con el método auxiliar
+            '''
+            artid = len(self.articles)  # Asignamos valor con len para que sea incremental en orden
+            self.articles[artid] = (docid, i)  # i = posición del artículo en el fichero
+            self.urls.add(article['url'])  # Marcamos la URL como indexada
 
-        input: "filename" es el nombre de un fichero generado por el Crawler cada línea es un objeto json
-            con la información de un artículo de la Wikipedia
+            # PONGO ALL PORQUE CON DEFAULT_FIELD nos está dando problemas
+            tokens = self.tokenize(article['all'])  # Limpiamos el artículo con tokenize
 
-        NECESARIO PARA TODAS LAS VERSIONES
+            # Ahora es turno de crear el índice invertido
+            positions = {}
+            for pos, token in enumerate(tokens):
+                if not token: # Si token es vacío ignoramos, PUEDE QUE NO HAGA FALTA, HAY QUE COMPROBAR
+                    continue
 
-        dependiendo del valor de self.positional se debe ampliar el indexado
+                if token not in self.index: # Si token no está inicializamos lista vacía
+                    self.index[token] = []
 
-        """
+                # Si se activa el índice posicional
+                if self.positional:
+                    # Hay que guardar cada artid para el token
+                    if self.index[token] and self.index[token][-1][0] == artid: # Si en ESTE MISMO ARTID YA EXISTE EL TOKEN INDEXADO solo guardamos la nueva posición donde aparece
+                        self.index[token][-1][1].append(pos)
+                    else:   # Si se trata de OTRO ARTID tenemos que poner otra NUEVA ENTRADA para el token y su posición
+                        self.index[token].append((artid, [pos]))
+                        
+                # Si el índice no es posiconal        
+                else:
+                    # Solo guardamos el artid una vez por término
+                    if not any(entry[0] == artid for entry in self.index[token]):
+                        self.index[token].append((artid, []))  # Lista vacía de posiciones
+        '''
+        Si no activamos positional con -P podremos buscar si un término aparece en un artículo
+        y con esto hacer búsquedas de tipo OR o AND.
+        
+        Sin embargo si activamos positional con -P guardaremos la posición relativa de cada 
+        término en cada artículo; esto nos permitirá hacer búsquedas más avanzadas: frases
+        exactas o proximidad. Esta es mucho más interesante y útil como se puede ver.
+        '''
 
-        for i, line in enumerate(open(filename)):
-            j = self.parse_article(line)
-
-
-        #
-        # 
-        # Solo se debe indexar el contenido self.DEFAULT_FIELD
-        #
-        #
-        #
-        #################
-        ### COMPLETAR ###
-        #################
-
-
+    # Método auxiliar ya hecho
     def tokenize(self, text:str):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -400,9 +442,7 @@ class SAR_Indexer:
         """
         return self.tokenizer.sub(' ', text.lower()).split()
 
-
-
-
+    # Método para mostrar estadísticas que tenemos que completar
     def show_stats(self):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -410,11 +450,22 @@ class SAR_Indexer:
         Muestra estadisticas de los indices
 
         """
-        pass
-        ########################################
-        ## COMPLETAR PARA TODAS LAS VERSIONES ##
-        ########################################
+        # No tiene más misterio que acceder a los atributos del self donde hayamos guardado las estadísticas y mostrarlas con f strings
+        print("=" * 40)
+        print(f"Number of indexed files: {len(self.docs)}")
+        print("-" * 40)
+        print(f"Number of indexed articles: {len(self.articles)}")
+        print("-" * 40)
+        print("TOKENS:")
+        print(f"\t# of tokens in 'all': {len(self.index)}")
+        print("-" * 40)
 
+        if hasattr(self, 'positional') and self.positional:
+            print("Positional queries are allowed.")
+        else:
+            print("Positional queries are NOT allowed.")
+
+        print("=" * 40)
 
 
     #################################
