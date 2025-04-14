@@ -363,14 +363,20 @@ class SAR_Indexer:
     # Método para indexar que tenemos que completar
     def index_file(self, filename: str):
         '''
-        El objetivo de index_file crear un índice para todos los documentos JSON que a su
-        vez contienen artículos dentro. 
+        El objetivo de index_file es crear un índice para todos los documentos JSON que a su
+        vez contienen artículos dentro.
+        
         Es fácil observar que por cada documento tendremos
         que asignar un entero en self.docs y luego por cada lína desde la 1 hasta la n
         tendremos que asignar otro entero al artículo en self.articles.
+        
         Por tanto lo que vamos a hacer es recorrer estos documentos e ir asignando pares
         clave valor al self; por ejemplo, para el documento 1 línea 7 tendremos como clave 
         docid = 1 y artid = 7 y así podremos diferenciarlo de los demás.
+        
+        Además para cada aparición de un token tendremos un clave valor asociado donde
+        la clave será el artículo asociado y el valor una lista de [apariciones del token] ---> Búsqueda posicional
+        en ese documento en las posiciones relativas.
         '''
         # Accedemos a los valores de self.docs para ver si ya ha sido procesado
         if filename not in self.docs.values():
@@ -383,7 +389,7 @@ class SAR_Indexer:
         docid = list(self.docs.keys())[-1]  # Cogemos el último docid asignado
 
         # Reccoremos cada línea del JSON
-        for i, line in enumerate(open(filename, encoding="utf-8")):
+        for i, line in enumerate(open(filename, encoding="utf-8")): # Usamos enumerate para saber el número de línea 0...n y line el contenido de esta
             article = self.parse_article(line)
             '''
             if self.already_in_index(article):
@@ -398,7 +404,7 @@ class SAR_Indexer:
 
             # Ahora es turno de crear el índice invertido
             positions = {}
-            for pos, token in enumerate(tokens):
+            for pos, token in enumerate(tokens):    # Volvemos a usar enumerate para lo mismo que con line arriba
                 if not token: # Si token es vacío ignoramos, PUEDE QUE NO HAGA FALTA, HAY QUE COMPROBAR
                     continue
 
@@ -416,7 +422,7 @@ class SAR_Indexer:
                 # Si el índice no es posiconal        
                 else:
                     # Solo guardamos el artid una vez por término
-                    if not any(entry[0] == artid for entry in self.index[token]):
+                    if not any(entry[0] == artid for entry in self.index[token]):   #Recorremos cada entrada asociada al token para saber si se corresponde con el artid actual
                         self.index[token].append((artid, []))  # Lista vacía de posiciones
         '''
         Si no activamos positional con -P podremos buscar si un término aparece en un artículo
@@ -426,6 +432,7 @@ class SAR_Indexer:
         término en cada artículo; esto nos permitirá hacer búsquedas más avanzadas: frases
         exactas o proximidad. Esta es mucho más interesante y útil como se puede ver.
         '''
+        
 
     # Método auxiliar ya hecho
     def tokenize(self, text:str):
