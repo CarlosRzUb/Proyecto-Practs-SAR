@@ -504,12 +504,64 @@ class SAR_Indexer:
 
         """
         
-        if query is None or len(query) == 0:
-            return []
+        if not query:
+            return [], []
 
-        ########################################
-        ## COMPLETAR PARA TODAS LAS VERSIONES ##
-        ########################################
+        query = query.strip()
+        used_terms = []
+
+        # 1. Buscar frases exactas (búsqueda posicional)
+        if '"' in query:
+            # Extrae lo que está entre comillas
+            parts = re.findall(r'"(.*?)"', query)
+            if parts:
+                phrase = parts[0]
+                terms = self.tokenize(phrase)
+                used_terms.extend(terms)
+                result = self.get_positionals(terms)
+                return [artid for artid, _ in result], used_terms
+
+        # 2. Tokenización de la consulta normal y detección de operadores
+        tokens = query.split()
+        terms = []
+        operators = []
+
+        i = 0
+        while i < len(tokens):
+            token = tokens[i].upper()
+            if token in ['AND', 'OR', 'NOT']:
+                operators.append(token)
+            else:
+                term = tokens[i].lower()
+                posting = [artid for artid, _ in self.get_posting(term)]
+                used_terms.append(term)
+                terms.append(posting)
+            i += 1
+
+        if not terms:
+            return [], []
+
+        # 3. Procesamiento de operadores lógicos (de izquierda a derecha)
+        result = terms[0]
+        op_idx = 0
+
+        for i in range(1, len(terms)):
+            op = operators[op_idx] if op_idx < len(operators) else 'AND'
+            next_posting = terms[i]
+
+            if op == 'AND':
+                result = self.and_posting(result, next_posting)
+            elif op == 'OR':
+                result = sorted(list(set(result).union(set(next_posting))))
+            elif op == 'NOT':
+                result = self.and_posting(result, self.reverse_posting(next_posting))
+
+            op_idx += 1
+
+        return result, used_terms
+
+        
+        
 
 
 
@@ -528,10 +580,10 @@ class SAR_Indexer:
         NECESARIO PARA TODAS LAS VERSIONES
 
         """
-        ########################################
-        ## COMPLETAR PARA TODAS LAS VERSIONES ##
-        ########################################
-        pass
+        # Si el término no está en el índice, devolvemos una lista vacía
+        if term not in self.index:
+            return []
+        return self.index[term]
 
 
 
@@ -546,11 +598,57 @@ class SAR_Indexer:
         return: posting list
 
         """
+        
+        # Paso 1: obtener posting lists de todos los términos
+        result = []
+        for term in terms:
+            if term not in self.index:
+                return []
+            result.append(self.index[term])
 
-        #################################
-        ## COMPLETAR PARA POSICIONALES ##
-        #################################
-        pass
+        # Paso 2: hacer intersecciones posicionales entre cada par consecutivo
+        posting = result[0]
+        for i in range(1, len(result)):
+            p1 = posting
+            p2 = result[i]
+            new_posting = []
+            i1 = i2 = 0
+            
+            # Se recorre la posting list de ambos términos
+            while i1 < len(p1) and i2 < len(p2):
+                doc1, pos1 = p1[i1]
+                doc2, pos2 = p2[i2]
+                if doc1 == doc2:
+                    matches = []
+                    idx1 = 0
+                    idx2 = 0
+                    while idx1 < len(pos1):
+                        while idx2 < len(pos2):
+                            if pos2[idx2] - pos1[idx1] == 1:
+                                matches.append(pos2[idx2])
+                                break  # una coincidencia por pos1 es suficiente
+                            elif pos2[idx2] > pos1[idx1] + 1:
+                                break
+                            idx2 += 1
+                        idx1 += 1
+                    if matches:
+                        new_posting.append((doc1, matches))
+                    i1 += 1
+                    i2 += 1
+                elif doc1 < doc2:
+                    i1 += 1
+                else:
+                    i2 += 1
+            posting = new_posting
+            if not posting:
+                return []
+
+        return posting
+        
+        
+        
+
+
 
 
 
@@ -569,10 +667,11 @@ class SAR_Indexer:
 
         """
         
-        pass
-        ########################################
-        ## COMPLETAR PARA TODAS LAS VERSIONES ##
-        ########################################
+        result = []
+        for i in range(len(self.articles)):
+            if i not in p:
+                result.append(i)
+        return result
 
 
 
@@ -589,10 +688,21 @@ class SAR_Indexer:
 
         """
         
-        pass
-        ########################################
-        ## COMPLETAR PARA TODAS LAS VERSIONES ##
-        ########################################
+        result = []
+
+        i, j = 0
+        while i <= (len(p1) - 1) and j <= (len(p2) - 1):
+            if p1[i] == p2[j]:
+                result.append(p1[i])
+                i += 1
+                j += 1
+            elif p1[i] < p2[j]:
+                i += 1
+            else:
+                j += 1
+        
+        return result
+    
 
 
 
@@ -673,10 +783,16 @@ class SAR_Indexer:
         return: el numero de artículo recuperadas, para la opcion -T
 
         """
-        pass
-        ################
-        ## COMPLETAR  ##
-        ################
+        if not query:
+            return 0
+
+        result, _ = self.solve_query(query)
+
+        print(f'{query}\t{len(result)}')
+        if result:
+            self.show_results(result)
+
+        return len(result)
 
 
 
