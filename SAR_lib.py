@@ -1,44 +1,36 @@
+# versión 1.1
+
 import json
 import os
 import re
 import sys
-import math
 from pathlib import Path
 from typing import Optional, List, Union, Dict
 import pickle
-import numpy as np
 import nltk
+from SAR_semantics import SentenceBertEmbeddingModel, BetoEmbeddingCLSModel, BetoEmbeddingModel, SpacyStaticModel
+from nltk.tokenize import sent_tokenize
 
 
+# INICIO CAMBIO EN v1.1
 ## UTILIZAR PARA LA AMPLIACION
-if False:
-    from nltk.tokenize import sent_tokenize
-    import sentence_transformers
-    from scipy.spatial import KDTree
-    from scipy.spatial.distance import cosine
-    nltk.download('punkt')
+# Selecciona un modelo semántico
+SEMANTIC_MODEL = "SBERT"
+#SEMANTIC_MODEL = "BetoCLS"
+#SEMANTIC_MODEL = "Beto"
+#SEMANTIC_MODEL = "Spacy"
+#SEMANTIC_MODEL = "Spacy_noSW_noA"
 
-    def cosine_similarity(v1, v2):
-        """
-        
-        Calcula la similitud coseno de dos vectores. La funcion 'cosine' devuelve la 'distancia coseno'
-        
-        similitud_coseno = 1 - distancia_coseno
-        
-        """
-        return 1 - cosine(v1, v2)
+def create_semantic_model(modelname):
+    assert modelname in ("SBERT", "BetoCLS", "Beto", "Spacy", "Spacy_noSW_noA")
+    
+    if modelname == "SBERT": return SentenceBertEmbeddingModel()    
+    elif modelname == "BetoCLS": return BetoEmbeddingCLSModel()
+    elif modelname == "Beto": return BetoEmbeddingModel()
+    elif modelname == "Spacy": SpacyStaticModel(remove_stopwords=False, remove_noalpha=False)
+    return SpacyStaticModel()
+# FIN CAMBIO EN v1.1
 
-    def euclidean_to_cosine(d:float):
-        """
-        
-        Pasa de distancia euclidea DE VECTORES NORMALIZADOS a similitud coseno. 
-        
-        """
-        return 1 - d**2/2
-        
-        
-
-    SEMANTIC_MODEL = "jaimevera1107/all-MiniLM-L6-v2-similarity-es"
 
 class SAR_Indexer:
     """
@@ -52,8 +44,6 @@ class SAR_Indexer:
     Los metodos que se añadan se deberan documentar en el codigo y explicar en la memoria
     """
 
-
-    
     # campo que se indexa
     DEFAULT_FIELD = 'all'
     # numero maximo de documento a mostrar cuando self.show_all es False
@@ -181,10 +171,8 @@ class SAR_Indexer:
     ###   SIMILITUD SEMANTICA   ###
     ###                         ###
     ###############################
-    
-    # LO COMENTO PORQUE DA ERRORES
 
-    '''        
+            
     def load_semantic_model(self, modelname:str=SEMANTIC_MODEL):
         """
     
@@ -193,64 +181,94 @@ class SAR_Indexer:
         
         """
         if self.model is None:
-            print(f"loading {modelname} model ... ",end="")
-            self.model = sentence_transformers.SentenceTransformer(modelname)
-            print("done!")
-    '''        
+            # INICIO CAMBIO EN v1.1
+            print(f"loading {modelname} model ... ",end="", file=sys.stderr)             
+            self.model = create_semantic_model(modelname)
+            print("done!", file=sys.stderr)
+            # FIN CAMBIO EN v1.1
 
-    def update_embeddings(self, txt:str, artid:int):
+            
+            
+
+    # INICIO CAMBIO EN v1.2
+
+    def update_chuncks(self, txt:str, artid:int):
         """
         
-        Añade los vectores (embeddings) de los chuncks del texto (txt) correspondiente al articulo artid a los indices.
+        Añade los chuncks (frases en nuestro caso) del texto "txt" correspondiente al articulo "artid" en la lista de chuncks
         Pasos:
-            1 - extraer los chuncks de txt
-            2 - obtener con el LM los embeddings de cada chunck
-            3 - normalizar los embeddings
-            4 - actualizar: self.chuncks, self.embeddings, self.chunck_index y self.artid_to_emb
+            1 - extraer los chuncks de txt, en nuestro caso son las frases. Se debe utilizar "sent_tokenize" de la librería "nltk"
+            2 - actualizar los atributos que consideres necesarios: self.chuncks, self.embeddings, self.chunck_index y self.artid_to_emb.
         
         """
 
-        self.load_semantic_model()
+        sentences = sent_tokenize(txt)
+        self.chuncks.extend(sentences)
 
-	# COMPLETAR
-        # 1
-        # 2
-        # 3
-        # 4                
+        start_idx = len(self.embeddings)
+        emb = self.model.encode(sentences)
+        self.embeddings.extend(emb)
+
+        for i in range(len(sentences)):
+            self.chunck_index.append((artid, i))  # (artículo, posición del chunk)
+        
+        self.artid_to_emb.setdefault(artid, []).extend(range(start_idx, start_idx + len(sentences)))
+
+        pass             
         
 
     def create_kdtree(self):
         """
-        Crea el tktree utilizando la información de los embeddings
-        Solo se debe crear una vez despues de indexar todos los documentos
-        """
-        print(f"Creating kdtree {len(self.embeddings)}...", end="")
-        self.kdtree = KDTree(self.embeddings)
-        print("done!")
         
+        Crea el tktree utilizando un objeto de la librería SAR_semantics
+        Solo se debe crear una vez despues de indexar todos los documentos
+        
+        # 1: Se debe llamar al método fit del modelo semántico
+        # 2: Opcionalmente se puede guardar información del modelo semántico (kdtree y/o embeddings) en el SAR_Indexer
+        
+        """
+        print(f"Creating kdtree ...", end="")
+        self.kdtree = self.model.fit(self.embeddings)
+        print("done!")
+
+
         
     def solve_semantic_query(self, query:str):
         """
-        
-        Resuelve una consulta utilizando el modelo de lenguaje.
+
+        Resuelve una consulta utilizando el modelo semántico.
         Pasos:
-            1 - obtiene el embedding normalizado de la consulta
-            2 - extrae los MAX_EMBEDDINGS embeddings más próximos
-            3 - convertir distancias euclideas a similitud coseno
-            4 - considerar solo las similitudes >= que self.semantic_threshold
-            5 - obtener los artids y su máxima similitud
-        
+            1 - utiliza el método query del modelo sémantico
+            2 - devuelve top_k resultados, inicialmente top_k puede ser MAX_EMBEDDINGS
+            3 - si el último resultado tiene una distancia <= self.semantic_threshold 
+                  ==> no se han recuperado todos los resultado: vuelve a 2 aumentando top_k
+            4 - también se puede salir si recuperamos todos los embeddings
+            5 - tenemos una lista de chuncks que se debe pasar a artículos
         """
 
         self.load_semantic_model()
-        
-        # COMPLETAR
 
-        # 1
-        # 2
-        # 3
-        # 4
-        # 5
+        top_k = self.MAX_EMBEDDINGS
+        retrieved_chunks = []
+        retrieved_articles = set()
+        
+        while True:
+            results = self.model.query(query, top_k)
+            retrieved_chunks = results  # lista de (indice_chunk, distancia)
+            
+            if not retrieved_chunks:
+                break
+            
+            max_dist = retrieved_chunks[-1][1]
+            new_articles = {self.chunck_index[i][0] for i, _ in retrieved_chunks}
+            retrieved_articles = new_articles
+
+            if max_dist > self.semantic_threshold or len(retrieved_chunks) >= len(self.embeddings):
+                break
+
+            top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
+
+        return list(retrieved_articles)
 
 
     def semantic_reranking(self, query:str, articles: List[int]):
@@ -258,27 +276,50 @@ class SAR_Indexer:
 
         Ordena los articulos en la lista 'article' por similitud a la consulta 'query'.
         Pasos:
-            1 - obtener el vector normalizado de la consulta
-            2 - calcular la similitud coseno de la consulta con todos los embeddings de cada artículo
-            3 - ordenar los artículos en función de la mejor similitud.
-            
+            1 - utiliza el método query del modelo sémantico
+            2 - devuelve top_k resultado, inicialmente top_k puede ser MAX_EMBEDDINGS
+            3 - a partir de los chuncks se deben obtener los artículos
+            3 - si entre los artículos recuperados NO estan todos los obtenidos por la RI binaria
+                  ==> no se han recuperado todos los resultado: vuelve a 2 aumentando top_k
+            4 - se utiliza la lista ordenada del kdtree para ordenar la lista "articles"
         """
         
-        print(self.artid_to_emb.keys())
-        
         self.load_semantic_model()
-        # COMPLETAR
-        # 1
-        # 2
-        # 3
 
+        top_k = self.MAX_EMBEDDINGS
+        article_set = set(articles)
+
+        while True:
+            results = self.model.query(query, top_k)
+            chunk_idxs = [i for i, _ in results]
+            retrieved_articles = [self.chunck_index[i][0] for i in chunk_idxs]
+            
+            if article_set.issubset(set(retrieved_articles)) or top_k >= len(self.embeddings):
+                break
+            
+            top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
+
+        # Ranking: mantener el orden según el primer chunk relevante encontrado
+        seen = set()
+        reranked = []
+        for i, _ in results:
+            aid = self.chunck_index[i][0]
+            if aid in article_set and aid not in seen:
+                reranked.append(aid)
+                seen.add(aid)
+            if len(reranked) == len(articles):
+                break
+
+        return reranked
+    
+    # FIN CAMBIO EN v1.2
 
     ###############################
     ###                         ###
     ###   PARTE 1: INDEXACION   ###
     ###                         ###
     ###############################
-    
+
     ###############################
     ###                         ###
     ###     JAIME Y NACHO       ###
@@ -475,9 +516,16 @@ class SAR_Indexer:
         print("=" * 40)
 
 
+
     #################################
     ###                           ###
     ###   PARTE 2: RECUPERACION   ###
+    ###                           ###
+    #################################
+    
+    #################################
+    ###                           ###
+    ###      Carlos y Adrián     ###
     ###                           ###
     #################################
 
@@ -560,12 +608,6 @@ class SAR_Indexer:
 
         return result, used_terms
 
-        
-        
-
-
-
-
     def get_posting(self, term:str):
         """
 
@@ -584,8 +626,6 @@ class SAR_Indexer:
         if term not in self.index:
             return []
         return self.index[term]
-
-
 
     def get_positionals(self, terms:str):
         """
@@ -645,13 +685,6 @@ class SAR_Indexer:
 
         return posting
         
-        
-        
-
-
-
-
-
     def reverse_posting(self, p:list):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -673,8 +706,6 @@ class SAR_Indexer:
                 result.append(i)
         return result
 
-
-
     def and_posting(self, p1:list, p2:list):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -690,7 +721,7 @@ class SAR_Indexer:
         
         result = []
 
-        i, j = 0
+        i, j = 0, 0
         while i <= (len(p1) - 1) and j <= (len(p2) - 1):
             if p1[i] == p2[j]:
                 result.append(p1[i])
@@ -702,12 +733,6 @@ class SAR_Indexer:
                 j += 1
         
         return result
-    
-
-
-
-
-
 
     def minus_posting(self, p1, p2):
         """
@@ -728,10 +753,6 @@ class SAR_Indexer:
         ########################################################
         ## COMPLETAR PARA TODAS LAS VERSIONES SI ES NECESARIO ##
         ########################################################
-
-
-
-
 
     #####################################
     ###                               ###
@@ -790,9 +811,6 @@ class SAR_Indexer:
 
         print(f'{query}\t{len(result)}')
         if result:
-            self.show_results(result)
+            self.show_stats()
 
         return len(result)
-
-
-
