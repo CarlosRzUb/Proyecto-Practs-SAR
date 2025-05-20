@@ -602,8 +602,17 @@ class SAR_Indexer:
         # 3. Procesamiento de operadores lógicos (de izquierda a derecha)
         result = terms[0]
         op_idx = 0
+        # Si la query arranca con NOT, invertimos el primer posting:
+        start_neg = tokens[0].upper() == 'NOT'
+        if start_neg:
+            result = self.reverse_posting(terms[0])
+            op_idx = 1
+        else:
+            result = terms[0]
+            op_idx = 0
 
         for i in range(1, len(terms)):
+            op = operators[op_idx] if op_idx < len(operators) else 'AND'
             op = operators[op_idx] if op_idx < len(operators) else 'AND'
             next_posting = terms[i]
 
@@ -615,6 +624,7 @@ class SAR_Indexer:
                 result = self.and_posting(result, self.reverse_posting(next_posting))
 
             op_idx += 1
+
 
         return result, used_terms
 
@@ -672,10 +682,11 @@ class SAR_Indexer:
                     matches = []
                     idx1 = idx2 = 0
                     while idx1 < len(pos1):
+                        idx2 = 0
                         while idx2 < len(pos2):
                             if pos2[idx2] - pos1[idx1] == 1:  # si la posición de p2 es una posición siguiente a p1
                                 matches.append(pos2[idx2])
-                                break  # una coincidencia por pos1 es suficiente
+                                break
                             elif pos2[idx2] > pos1[idx1] + 1:
                                 break
                             idx2 += 1
@@ -802,7 +813,5 @@ class SAR_Indexer:
         result, _ = self.solve_query(query)  # Obtener el resultado de la consulta
 
         print(f'{query}\t{len(result)}')  # Mostrar la consulta y el número de resultados
-        if result:
-            self.show_stats()
 
         return len(result)  # Devolver el número de resultados
