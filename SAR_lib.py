@@ -60,7 +60,7 @@ class SAR_Indexer:
         NECESARIO PARA LA VERSION MINIMA
 
         Incluye todas las variables necesaria pero
-        	puedes añadir más variables si las necesitas. 
+        	puedes añadir más variables si las necesitas.
 
         """
         self.urls = set() # hash para las urls procesadas,
@@ -469,8 +469,8 @@ class SAR_Indexer:
                         self.index[token][-1][1].append(pos)
                     else:   # Si se trata de OTRO ARTID tenemos que poner otra NUEVA ENTRADA para el token y su posición
                         self.index[token].append((artid, [pos]))
-                        
-                # Si el índice no es posiconal        
+
+                # Si el índice no es posiconal
                 else:
                     # Solo guardamos el artid una vez por término
                     if not any(entry[0] == artid for entry in self.index[token]):   #Recorremos cada entrada asociada al token para saber si se corresponde con el artid actual
@@ -478,12 +478,12 @@ class SAR_Indexer:
         '''
         Si no activamos positional con -P podremos buscar si un término aparece en un artículo
         y con esto hacer búsquedas de tipo OR o AND.
-        
-        Sin embargo si activamos positional con -P guardaremos la posición relativa de cada 
+
+        Sin embargo si activamos positional con -P guardaremos la posición relativa de cada
         término en cada artículo; esto nos permitirá hacer búsquedas más avanzadas: frases
         exactas o proximidad. Esta es mucho más interesante y útil como se puede ver.
         '''
-        
+
 
     # Método auxiliar ya hecho
     def tokenize(self, text:str):
@@ -568,16 +568,28 @@ class SAR_Indexer:
         query = query.strip()
         used_terms = []
 
-        # 1. Buscar frases exactas (búsqueda posicional)
+        # Manejar comillas
         if '"' in query:
-            # Extrae lo que está entre comillas
             parts = re.findall(r'"(.*?)"', query)
+            remaining_query = re.sub(r'"(.*?)"', '', query).strip()
+            
             if parts:
                 phrase = parts[0]
                 terms = self.tokenize(phrase)
                 used_terms.extend(terms)
-                result = self.get_positionals(terms)
-                return [artid for artid, _ in result], used_terms
+                phrase_result = [artid for artid, _ in self.get_positionals(terms)]
+                
+                # Manejo del operador NOT
+                if remaining_query.startswith('NOT'):
+                    remaining_query = remaining_query[3:].strip()
+                    phrase_result = self.reverse_posting(phrase_result)
+                
+                if not remaining_query:
+                    return phrase_result, used_terms
+                
+                remaining_result, remaining_terms = self.solve_query(remaining_query)
+                used_terms.extend(remaining_terms)
+                return self.and_posting(phrase_result, remaining_result), used_terms
 
         # 2. Tokenización de la consulta normal y detección de operadores
         tokens = query.split()
@@ -649,60 +661,62 @@ class SAR_Indexer:
 
     def get_positionals(self, terms:str):
         """
-
         Devuelve la posting list asociada a una secuencia de terminos consecutivos.
         NECESARIO PARA LAS BÚSQUESAS POSICIONALES
-
-        param:  "terms": lista con los terminos consecutivos para recuperar la posting list.
-
-        return: posting list
-
         """
-        
-        # Paso 1: obtener posting lists de todos los términos
-        result = []
+        if len(terms) < 1:
+            return []
+
+        # Get postings for all terms
+        postings = []
         for term in terms:
             if term not in self.index:
                 return []
-            result.append(self.index[term])
+            postings.append(self.index[term])
 
-        # Paso 2: hacer intersecciones posicionales entre cada par consecutivo
-        posting = result[0]
-        for i in range(1, len(result)):
-            p1 = posting
-            p2 = result[i]
-            new_posting = []
+        # Start with first term's postings
+        result = postings[0]
+        
+        # For each subsequent term, find consecutive matches
+        for i in range(1, len(postings)):
+            new_result = []
+            p1 = result
+            p2 = postings[i]
             i1 = i2 = 0
-
-            # Se recorre la posting list de ambos términos
+            
             while i1 < len(p1) and i2 < len(p2):
-                doc1, pos1 = p1[i1]
-                doc2, pos2 = p2[i2]
-                if doc1 == doc2:  # si los documentos son iguales
-                    matches = []
-                    idx1 = idx2 = 0
-                    while idx1 < len(pos1):
-                        idx2 = 0
-                        while idx2 < len(pos2):
-                            if pos2[idx2] - pos1[idx1] == 1:  # si la posición de p2 es una posición siguiente a p1
-                                matches.append(pos2[idx2])
-                                break
-                            elif pos2[idx2] > pos1[idx1] + 1:
-                                break
-                            idx2 += 1
-                        idx1 += 1
-                    if matches:
-                        new_posting.append((doc1, matches))
+                doc1, positions1 = p1[i1]
+                doc2, positions2 = p2[i2]
+                
+                if doc1 == doc2:
+                    # Find consecutive positions
+                    consecutive = []
+                    ptr1 = ptr2 = 0
+                    while ptr1 < len(positions1) and ptr2 < len(positions2):
+                        if positions2[ptr2] == positions1[ptr1] + 1:  # Check consecutive positions
+                            consecutive.append(positions2[ptr2])
+                            ptr1 += 1
+                            ptr2 += 1
+                        elif positions2[ptr2] < positions1[ptr1] + 1:
+                            ptr2 += 1
+                        else:
+                            ptr1 += 1
+                    
+                    if consecutive:
+                        new_result.append((doc1, consecutive))
+                    
                     i1 += 1
                     i2 += 1
                 elif doc1 < doc2:
                     i1 += 1
                 else:
                     i2 += 1
-            posting = new_posting
-            if not posting:
+            
+            result = new_result
+            if not result:
                 return []
-        return posting
+                
+        return result
 
     def reverse_posting(self, p:list):
         """
@@ -784,7 +798,10 @@ class SAR_Indexer:
             if len(line) > 0 and line[0] != '#':
                 query, ref = line.split('\t')
                 reference = int(ref)
-                result, _ = len(self.solve_query(query))
+                # INICIO CAMBIO EN v1.1
+                result, _ = self.solve_query(query)
+                result = len(result)
+                # FIN CAMBIO EN v1.1
                 if reference == result:
                     print(f'{query}\t{result}')
                 else:

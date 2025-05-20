@@ -14,13 +14,13 @@ if __name__ == "__main__":
                         help='name of the index.')
 
 
-    parser.add_argument('-C', '--count', dest='count', action='store_true', default=False,
+    parser.add_argument('-C', '--count', dest='count', action='store_true', default=False, 
                     help='show only the number of documents retrieved.')
 
 
-    parser.add_argument('-A', '--all', dest='all', action='store_true', default=False,
+    parser.add_argument('-A', '--all', dest='all', action='store_true', default=False, 
                     help='show all the results. If not used, only the first 10 results are showed. Does not apply with -C and -T options.')
-
+    
 
     out_group = parser.add_argument_group("Batch modes")
     group1 = out_group.add_mutually_exclusive_group()
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     group0 = sem_group.add_mutually_exclusive_group()
     group0.add_argument('-S', '--semantic_threshold', dest= 'sthreshold', type=float, action='store', default=None, help='threshold for the semantic search.')
     group0.add_argument('-R', '--semantic_ranking', dest= 'sranking', action='store_true', help='active the semantic ranking of the binary search.')
-
+    
 
     args = parser.parse_args()
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     searcher.set_showall(args.all)
     searcher.set_semantic_threshold(args.sthreshold)
     searcher.set_semantic_ranking(args.sranking)
-
+    
     # se debe contar o mostrar resultados?
     if args.count is True:
         fnc = searcher.solve_and_count
@@ -61,7 +61,7 @@ if __name__ == "__main__":
         if searcher.solve_and_test(query_list):
             print('\nParece que todo está bien, buen trabajo!')
         else:
-            print('\nParece que hay alguna consulta mal :-(')
+            print('\nParece que hay alguna consulta mal :-(')            
 
     elif args.query is not None:
         # opt: -Q, una query pasada como argumento
