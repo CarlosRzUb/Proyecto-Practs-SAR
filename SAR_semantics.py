@@ -72,7 +72,7 @@ class BetoEmbeddingModel(EmbeddingModel):
         elif torch.backends.mps.is_available():
             self.device = torch.device("mps")
         else:
-            self.device = "cpu"        
+            self.device = "cpu"
         self.tokenizer = AutoTokenizer.from_pretrained("dccuchile/bert-base-spanish-wwm-uncased")
         self.model = AutoModel.from_pretrained("dccuchile/bert-base-spanish-wwm-uncased", ignore_mismatched_sizes=True).to(self.device)
         self.model.eval()  # Desactiva dropout
@@ -108,7 +108,7 @@ class BetoEmbeddingCLSModel(EmbeddingModel):
         elif torch.backends.mps.is_available():
             self.device = torch.device("mps")
         else:
-            self.device = "cpu"        
+            self.device = "cpu"
         self.tokenizer = AutoTokenizer.from_pretrained("dccuchile/bert-base-spanish-wwm-uncased")
         self.model = AutoModel.from_pretrained("dccuchile/bert-base-spanish-wwm-uncased", ignore_mismatched_sizes=True).to(self.device)
         self.model.eval()  # Desactiva dropout
@@ -132,7 +132,7 @@ class BetoEmbeddingCLSModel(EmbeddingModel):
             del inputs, outputs
             torch.cuda.empty_cache()
         return np.vstack(embeddings)
-                
+
 class SentenceBertEmbeddingModel(EmbeddingModel):
     def __init__(self) -> None:
         super().__init__()

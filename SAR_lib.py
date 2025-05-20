@@ -81,10 +81,11 @@ class SAR_Indexer:
         self.semantic_ranking = None # ¿¿ ranking de consultas binarias ??
         self.model = None
         self.MAX_EMBEDDINGS = 200 # número máximo de embedding que se extraen del kdtree en una consulta
-        
-        
-        
-        
+
+
+
+
+
 
     ###############################
     ###                         ###
@@ -172,23 +173,23 @@ class SAR_Indexer:
     ###                         ###
     ###############################
 
-            
+
     def load_semantic_model(self, modelname:str=SEMANTIC_MODEL):
         """
-    
+
         Carga el modelo de embeddings para la búsqueda semántica.
         Solo se debe cargar una vez
-        
+
         """
         if self.model is None:
             # INICIO CAMBIO EN v1.1
-            print(f"loading {modelname} model ... ",end="", file=sys.stderr)             
+            print(f"loading {modelname} model ... ",end="", file=sys.stderr)
             self.model = create_semantic_model(modelname)
             print("done!", file=sys.stderr)
             # FIN CAMBIO EN v1.1
 
-            
-            
+
+
 
     # INICIO CAMBIO EN v1.2
 
@@ -220,7 +221,7 @@ class SAR_Indexer:
         setdefault sirve para inicializar una clave si no existe:
         - Si artid ya existe como clave, usamos directamente su lista asociada
         - Si no existe, se crea una lista vacía y se añaden los índices de los nuevos embeddings
-        '''             
+        '''
         
 
     def create_kdtree(self):
@@ -238,7 +239,6 @@ class SAR_Indexer:
         print("done!")
 
 
-        
     def solve_semantic_query(self, query:str):
         """
 
@@ -246,8 +246,7 @@ class SAR_Indexer:
         Pasos:
             1 - utiliza el método query del modelo sémantico
             2 - devuelve top_k resultados, inicialmente top_k puede ser MAX_EMBEDDINGS
-            3 - si el último resultado tiene una distancia <= self.semantic_threshold 
-                  ==> no se han recuperado todos los resultado: vuelve a 2 aumentando top_k
+            3 - si el último resultado tiene una distancia <= self.semantic_threshold ==> no se han recuperado todos los resultado: vuelve a 2 aumentando top_k
             4 - también se puede salir si recuperamos todos los embeddings
             5 - tenemos una lista de chuncks que se debe pasar a artículos
         """
@@ -562,7 +561,7 @@ class SAR_Indexer:
         return: posting list con el resultado de la query
 
         """
-        
+
         if not query:
             return [], []
 
@@ -623,7 +622,7 @@ class SAR_Indexer:
         """
 
         Devuelve la posting list asociada a un termino.
-        Puede llamar self.get_positionals: para las búsquedas posicionales.
+        Alternativamente se puede llamar self.get_positionals() para las búsquedas posicionales.
 
 
         param:  "term": termino del que se debe recuperar la posting list.
@@ -664,18 +663,17 @@ class SAR_Indexer:
             p2 = result[i]
             new_posting = []
             i1 = i2 = 0
-            
+
             # Se recorre la posting list de ambos términos
             while i1 < len(p1) and i2 < len(p2):
                 doc1, pos1 = p1[i1]
                 doc2, pos2 = p2[i2]
-                if doc1 == doc2:
+                if doc1 == doc2:  # si los documentos son iguales
                     matches = []
-                    idx1 = 0
-                    idx2 = 0
+                    idx1 = idx2 = 0
                     while idx1 < len(pos1):
                         while idx2 < len(pos2):
-                            if pos2[idx2] - pos1[idx1] == 1:
+                            if pos2[idx2] - pos1[idx1] == 1:  # si la posición de p2 es una posición siguiente a p1
                                 matches.append(pos2[idx2])
                                 break  # una coincidencia por pos1 es suficiente
                             elif pos2[idx2] > pos1[idx1] + 1:
@@ -693,9 +691,8 @@ class SAR_Indexer:
             posting = new_posting
             if not posting:
                 return []
-
         return posting
-        
+
     def reverse_posting(self, p:list):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -710,7 +707,7 @@ class SAR_Indexer:
         return: posting list con todos los artid exceptos los contenidos en p
 
         """
-        
+
         result = []
         for i in range(len(self.articles)):
             if i not in p:
@@ -729,10 +726,10 @@ class SAR_Indexer:
         return: posting list con los artid incluidos en p1 y p2
 
         """
-        
+
         result = []
 
-        i, j = 0, 0
+        i,j = 0,0
         while i <= (len(p1) - 1) and j <= (len(p2) - 1):
             if p1[i] == p2[j]:
                 result.append(p1[i])
@@ -742,25 +739,9 @@ class SAR_Indexer:
                 i += 1
             else:
                 j += 1
-        
+
         return result
 
-    def minus_posting(self, p1, p2):
-        """
-        OPCIONAL PARA TODAS LAS VERSIONES
-
-        Calcula el except de dos posting list de forma EFICIENTE.
-        Esta funcion se incluye por si es util, no es necesario utilizarla.
-
-        param:  "p1", "p2": posting lists sobre las que calcular
-
-
-        return: posting list con los artid incluidos de p1 y no en p2
-
-        """
-
-        
-        pass
         ########################################################
         ## COMPLETAR PARA TODAS LAS VERSIONES SI ES NECESARIO ##
         ########################################################
@@ -818,10 +799,10 @@ class SAR_Indexer:
         if not query:
             return 0
 
-        result, _ = self.solve_query(query)
+        result, _ = self.solve_query(query)  # Obtener el resultado de la consulta
 
-        print(f'{query}\t{len(result)}')
+        print(f'{query}\t{len(result)}')  # Mostrar la consulta y el número de resultados
         if result:
             self.show_stats()
 
-        return len(result)
+        return len(result)  # Devolver el número de resultados
