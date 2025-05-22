@@ -532,7 +532,7 @@ class SAR_Indexer:
     ###   PARTE 2: RECUPERACION   ###
     ###                           ###
     #################################
-    
+
     #################################
     ###                           ###
     ###      Carlos y Adrián     ###
@@ -572,21 +572,21 @@ class SAR_Indexer:
         if '"' in query:
             parts = re.findall(r'"(.*?)"', query)
             remaining_query = re.sub(r'"(.*?)"', '', query).strip()
-            
+
             if parts:
                 phrase = parts[0]
                 terms = self.tokenize(phrase)
                 used_terms.extend(terms)
                 phrase_result = [artid for artid, _ in self.get_positionals(terms)]
-                
+
                 # Manejo del operador NOT
                 if remaining_query.startswith('NOT'):
                     remaining_query = remaining_query[3:].strip()
                     phrase_result = self.reverse_posting(phrase_result)
-                
+
                 if not remaining_query:
                     return phrase_result, used_terms
-                
+
                 remaining_result, remaining_terms = self.solve_query(remaining_query)
                 used_terms.extend(remaining_terms)
                 return self.and_posting(phrase_result, remaining_result), used_terms
@@ -667,33 +667,33 @@ class SAR_Indexer:
         if len(terms) < 1:
             return []
 
-        # Get postings for all terms
+        # Extraer los postintg lists de cada término
         postings = []
         for term in terms:
             if term not in self.index:
                 return []
             postings.append(self.index[term])
 
-        # Start with first term's postings
+        # Comenzar con la primera posting list
         result = postings[0]
-        
-        # For each subsequent term, find consecutive matches
+
+        # Recorrer las demás posting lists
         for i in range(1, len(postings)):
             new_result = []
             p1 = result
             p2 = postings[i]
             i1 = i2 = 0
-            
+
             while i1 < len(p1) and i2 < len(p2):
                 doc1, positions1 = p1[i1]
                 doc2, positions2 = p2[i2]
-                
+
                 if doc1 == doc2:
-                    # Find consecutive positions
+                    # Buscar posiciones consecutivas
                     consecutive = []
                     ptr1 = ptr2 = 0
                     while ptr1 < len(positions1) and ptr2 < len(positions2):
-                        if positions2[ptr2] == positions1[ptr1] + 1:  # Check consecutive positions
+                        if positions2[ptr2] == positions1[ptr1] + 1:
                             consecutive.append(positions2[ptr2])
                             ptr1 += 1
                             ptr2 += 1
@@ -701,21 +701,21 @@ class SAR_Indexer:
                             ptr2 += 1
                         else:
                             ptr1 += 1
-                    
+
                     if consecutive:
                         new_result.append((doc1, consecutive))
-                    
+
                     i1 += 1
                     i2 += 1
                 elif doc1 < doc2:
                     i1 += 1
                 else:
                     i2 += 1
-            
+
             result = new_result
             if not result:
                 return []
-                
+
         return result
 
     def reverse_posting(self, p:list):
