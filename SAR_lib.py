@@ -232,6 +232,9 @@ class SAR_Indexer:
         print("done!")
 
     def solve_semantic_query(self, query: str):
+
+        query = query.lower()
+
         self.load_semantic_model()
         top_k = self.MAX_EMBEDDINGS
         retrieved_articles = set()
@@ -528,6 +531,8 @@ class SAR_Indexer:
     ###################################
 
     def solve_query(self, query: str, prev: Dict = {}):
+
+        query = query.lower()
         
         if self.semantic:
             # Obtener resultados semánticos
