@@ -267,53 +267,31 @@ class SAR_Indexer:
 
 
     '''
-    def semantic_reranking(self, query: str, articles: List[int]):
+    def semantic_reranking(self, query: str, articles: List[int]) -> List[int]:
         self.load_semantic_model()
+        # Si no hay artículos, usamos los relevantes semánticamente
+        if not articles:
+            articles = self.solve_semantic_query(query)
+        if not articles:
+            return []
 
-        terms = [t for t in self.tokenize(query) if t]
+        # Calcula el embedding de la consulta
+        query_emb = self.model.get_embeddings([query])[0]
 
-        sets = []
-        for term in terms:
-            top_k = self.MAX_EMBEDDINGS
-            retrieved_articles = set()
-            while True:
-                results = self.model.query(term, top_k)
-                if not results:
-                    break
-                if self.semantic_threshold is not None:
-                    filtered = [(dist, ind) for dist, ind in results if dist <= self.semantic_threshold]
-                else:
-                    filtered = results
-                if not filtered:
-                    break
-                new_articles = {self.chunk_index[ind][0] for dist, ind in filtered}
-                retrieved_articles.update(new_articles)
-                if len(filtered) < top_k or len(filtered) >= len(self.embeddings):
-                    break
-                top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
-            sets.append(retrieved_articles)
+        # Calcula la similitud coseno entre la consulta y cada artículo
+        scored_articles = []
+        for artid in articles:
+            emb_indices = self.artid_to_emb.get(artid, [])
+            if not emb_indices:
+                continue
+            art_embs = np.array([self.embeddings[i] for i in emb_indices])
+            art_emb = art_embs.mean(axis=0)
+            score = np.dot(query_emb, art_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(art_emb) + 1e-8)
+            scored_articles.append((artid, score))
 
-        if sets:
-            article_set = set.intersection(*sets)
-        else:
-            article_set = set()
-
-        top_k = self.MAX_EMBEDDINGS
-        reranked = []
-        seen = set()
-        while True:
-            results = self.model.query(query, top_k)
-            for _, ind in results:
-                aid = self.chunk_index[ind][0]
-                if aid in article_set and aid not in seen:
-                    reranked.append(aid)
-                    seen.add(aid)
-                if len(reranked) == len(article_set):
-                    break
-            if len(reranked) == len(article_set) or top_k >= len(self.embeddings):
-                break
-            top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
-
+        # Ordena por similitud descendente
+        scored_articles.sort(key=lambda x: x[1], reverse=True)
+        reranked = [artid for artid, _ in scored_articles]
         return reranked
     '''
     
@@ -366,7 +344,7 @@ class SAR_Indexer:
             if self.chunks:
                 self.create_kdtree()
                 # Guardamos create_kdtree()
-                self.save_info('mi_indice_semantic.pkl')
+                # self.save_info('mi_indice_semantic.pkl')
             else:
                 print("Warning: No hay chunks disponibles para construir el KDTree.", file=sys.stderr)
 
@@ -544,23 +522,21 @@ class SAR_Indexer:
         Returns:
             Tuple[List[int], List]: Lista de identificadores de artículos que cumplen la consulta y una lista vacía (para posibles errores).
         """
-
+        # Si la consulta está vacía, no hay resultados que devolver
+        if not query:
+            return [], []
+        
         # Normaliza la consulta a minúsculas
         query = query.lower()
         
         # Si está activada la búsqueda semántica, delega la consulta al motor semántico
         if self.semantic:
             semantic_results = self.solve_semantic_query(query)
-            # Si además está activado el reranking semántico, reordena los resultados
-            '''
-            if self.semantic_ranking:
-                semantic_results = self.semantic_reranking(query, semantic_results)
             return semantic_results, []
-            '''
-            
-        # Si la consulta está vacía, no hay resultados que devolver
-        if not query:
-            return [], []
+
+        # Si está activada el reranking semántico, reordena los resultados booleanos
+        # if self.semantic_ranking and result:
+            # result = self.semantic_reranking(query, result)
 
         terms = []  # Lista de términos parseados de la consulta (pueden ser palabras, frases o NOT)
         i = 0
