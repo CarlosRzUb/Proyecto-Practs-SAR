@@ -631,7 +631,7 @@ class SAR_Indexer:
     def get_posting(self, term: str):
         # Comprueba si el término está en el índice invertido
         if term in self.index:
-            # Devuelve una lista de identificadores de documento donde aparece el término
+            # Devuelve una lista de identificadores de documento donde aparece el término.
             # self.index[term] es una lista de tuplas (docid, posiciones)
             return [docid for docid, _ in self.index[term]]
         
