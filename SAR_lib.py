@@ -181,100 +181,97 @@ class SAR_Indexer:
     # INICIO CAMBIO EN v1.2
 
     def update_chunks(self, txt: str, artid: int):
-        """
-        
-        Añade los chuncks (frases en nuestro caso) del texto "txt" correspondiente al articulo "artid" en la lista de chuncks
-        Pasos:
-            1 - extraer los chuncks de txt, en nuestro caso son las frases. Se debe utilizar "sent_tokenize" de la librería "nltk"
-            2 - actualizar los atributos que consideres necesarios: self.chuncks, self.embeddings, self.chunck_index y self.artid_to_emb.
-        
-        """
+        # Asegura que el modelo semántico esté cargado antes de procesar los textos
         self.load_semantic_model()
         
-        sentences = sent_tokenize(txt)  # Se divide el texto en frases individuales
-        self.chunks.extend(sentences)  # Añadimos las frases extraídas a la lista general de chunks
+        # Divide el texto completo del artículo en frases (sentencias)
+        sentences = sent_tokenize(txt)
+        # Añade las nuevas frases al listado global de chunks
+        self.chunks.extend(sentences)
 
-        # Codificamos las frases con el modelo de embeddings
-        start_idx = len(self.embeddings)  # Índice desde el que empezaremos a insertar los nuevos embeddings
-        emb = self.model.get_embeddings(sentences)  # Codificamos las frases en vectores semánticos
-        self.embeddings.extend(emb)  # Añadimos los vectores resultantes a la lista general
+        # Guarda el índice inicial donde se empezarán a añadir los nuevos embeddings
+        start_idx = len(self.embeddings)
+        # Calcula los embeddings para cada frase usando el modelo semántico
+        emb = self.model.get_embeddings(sentences)
+        # Añade los nuevos embeddings al listado global
+        self.embeddings.extend(emb)
 
-        # Actualizamos la estructura que asocia cada chunk a su artículo y su posición en dicho artículo
+        # Por cada frase añadida, guarda una tupla (artid, i) en chunk_index,
+        # donde 'artid' es el identificador del artículo y 'i' el índice de la frase dentro del artículo
         for i in range(len(sentences)):
-            self.chunk_index.append((artid, i))  # Añadimos una tupla con el identificador del artículo y la posición del chunk
+            self.chunk_index.append((artid, i))
 
-        # Asociamos el artículo con los índices de los embeddings recién añadidos
+        # Actualiza el diccionario artid_to_emb para este artículo,
+        # añadiendo los índices de los nuevos embeddings asociados a este artid
         self.artid_to_emb.setdefault(artid, []).extend(range(start_idx, start_idx + len(sentences)))
-        '''
-        setdefault sirve para inicializar una clave si no existe:
-        - Si artid ya existe como clave, usamos directamente su lista asociada
-        - Si no existe, se crea una lista vacía y se añaden los índices de los nuevos embeddings
-        '''
+
+
 
     def create_kdtree(self):
-        """
-        
-        Crea el tktree utilizando un objeto de la librería SAR_semantics
-        Solo se debe crear una vez despues de indexar todos los documentos
-        
-        # 1: Se debe llamar al método fit del modelo semántico
-        # 2: Opcionalmente se puede guardar información del modelo semántico (kdtree y/o embeddings) en el SAR_Indexer
-        
-        """
         print(f"Creating kdtree ...", end="")
+        
+        # Convierte la lista de embeddings a un array de numpy si es necesario
         if isinstance(self.embeddings, list):
             embeddings_array = np.array(self.embeddings)
         else:
             embeddings_array = self.embeddings
+
+        # Crea el KDTree usando los embeddings y la métrica euclídea
         self.kdtree = KDTree(embeddings_array, metric="euclidean")
+        
+        # Si el modelo tiene el método set_kdtree, le pasa el KDTree creado
         if hasattr(self.model, "set_kdtree"):
             self.model.set_kdtree(self.kdtree)
+        
         print("done!")
 
-    def solve_semantic_query(self, query: str):
 
+
+    def solve_semantic_query(self, query: str):
+        # Convierte la consulta a minúsculas para normalizarla
         query = query.lower()
 
+        # Asegura que el modelo semántico esté cargado antes de realizar la consulta
         self.load_semantic_model()
-        top_k = self.MAX_EMBEDDINGS
-        retrieved_articles = set()
+        top_k = self.MAX_EMBEDDINGS  # Número inicial de embeddings a recuperar
+        retrieved_articles = set()   # Conjunto para almacenar los artículos recuperados
 
         while True:
+            # Realiza la consulta semántica al modelo, recuperando los top_k resultados más similares
             results = self.model.query(query, top_k)
             if not results:
-                break
+                break  # Si no hay resultados, termina el bucle
 
-            # Filtra por umbral si está definido
+            # Si hay un umbral de similitud definido, filtra los resultados por distancia
             if self.semantic_threshold is not None:
                 filtered = [(dist, ind) for dist, ind in results if dist <= self.semantic_threshold]
             else:
                 filtered = results
 
             if not filtered:
-                break
+                break  # Si no quedan resultados tras el filtrado, termina el bucle
 
+            # Obtiene los identificadores de artículos asociados a los chunks recuperados
             new_articles = {self.chunk_index[ind][0] for dist, ind in filtered}
             retrieved_articles = new_articles
 
-            # Si ya tienes todos los chunks por debajo del umbral o has recuperado todos los embeddings, termina
+            # Si se han recuperado menos de top_k resultados o ya se han explorado todos los embeddings, termina
             if len(filtered) < top_k or len(filtered) >= len(self.embeddings):
                 break
 
+            # Aumenta el número de resultados a recuperar en la siguiente iteración (si es necesario)
             top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
 
+        # Devuelve la lista de identificadores de artículos recuperados
         return list(retrieved_articles)
 
-    def semantic_reranking(self, query: str, articles: List[int]):
-        """
-        Ordena los articulos en la lista 'articles' por similitud a la consulta 'query'.
-        Para consultas con varias palabras, hace un AND semántico entre los términos.
-        """
-        self.load_semantic_model()  # Aseguramos que el modelo esté cargado
 
-        # 1. Divide la consulta en términos relevantes (palabras)
+    '''
+    def semantic_reranking(self, query: str, articles: List[int]):
+        self.load_semantic_model()
+
         terms = [t for t in self.tokenize(query) if t]
 
-        # 2. Recupera los artículos relevantes para cada término por separado
         sets = []
         for term in terms:
             top_k = self.MAX_EMBEDDINGS
@@ -296,13 +293,11 @@ class SAR_Indexer:
                 top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
             sets.append(retrieved_articles)
 
-        # 3. Intersección de todos los conjuntos (AND semántico)
         if sets:
             article_set = set.intersection(*sets)
         else:
             article_set = set()
 
-        # 4. Rerankea los artículos finales según la similitud con la consulta completa
         top_k = self.MAX_EMBEDDINGS
         reranked = []
         seen = set()
@@ -320,6 +315,7 @@ class SAR_Indexer:
             top_k = min(len(self.embeddings), top_k + self.MAX_EMBEDDINGS)
 
         return reranked
+    '''
     
     # FIN CAMBIO EN v1.2
 
@@ -339,6 +335,8 @@ class SAR_Indexer:
             bool: True si el artículo ya está indexado, False en caso contrario
         """
         return article['url'] in self.urls
+
+
 
     def index_dir(self, root: str, **args):
         """
@@ -372,12 +370,11 @@ class SAR_Indexer:
             else:
                 print("Warning: No hay chunks disponibles para construir el KDTree.", file=sys.stderr)
 
-            
-
-
         #####################################################
         ## COMPLETAR SI ES NECESARIO FUNCIONALIDADES EXTRA ##
         #####################################################
+         
+         
             
     def parse_article(self, raw_line:str) -> Dict[str, str]:
         """
@@ -398,11 +395,13 @@ class SAR_Indexer:
             txt_secs += '\n'.join(subsec['name'] + '\n' + subsec['text'] + '\n' for subsec in sec['subsections']) + '\n\n'
             sec_names.append(sec['name'])
             sec_names.extend(subsec['name'] for subsec in sec['subsections'])
-        article.pop('sections') # no la necesitamos
+        article.pop('sections')
         article['all'] = article['title'] + '\n\n' + article['summary'] + '\n\n' + txt_secs
         article['section-name'] = '\n'.join(sec_names)
 
         return article
+
+
 
     def index_file(self, filename: str):
         '''
@@ -480,6 +479,8 @@ class SAR_Indexer:
         exactas o proximidad. Esta es mucho más interesante y útil como se puede ver.
         '''
         
+        
+        
     def tokenize(self, text:str):
         """
         NECESARIO PARA TODAS LAS VERSIONES
@@ -493,6 +494,8 @@ class SAR_Indexer:
 
         """
         return self.tokenizer.sub(' ', text.lower()).split()
+
+
 
     def show_stats(self):
         """
@@ -531,46 +534,62 @@ class SAR_Indexer:
     ###################################
 
     def solve_query(self, query: str, prev: Dict = {}):
+        """
+        Procesa una consulta booleana o semántica y devuelve los artículos que la satisfacen.
 
+        Args:
+            query (str): Consulta a procesar.
+            prev (Dict): Parámetro reservado para futuras ampliaciones (no se usa actualmente).
+
+        Returns:
+            Tuple[List[int], List]: Lista de identificadores de artículos que cumplen la consulta y una lista vacía (para posibles errores).
+        """
+
+        # Normaliza la consulta a minúsculas
         query = query.lower()
         
+        # Si está activada la búsqueda semántica, delega la consulta al motor semántico
         if self.semantic:
-            # Obtener resultados semánticos
             semantic_results = self.solve_semantic_query(query)
+            # Si además está activado el reranking semántico, reordena los resultados
+            '''
+            if self.semantic_ranking:
+                semantic_results = self.semantic_reranking(query, semantic_results)
             return semantic_results, []
-        
-    # Si la consulta está vacía, no hay resultados que devolver
+            '''
+            
+        # Si la consulta está vacía, no hay resultados que devolver
         if not query:
             return [], []
 
-        terms = []      # Lista que almacenará los términos de la consulta (palabras clave, frases, operadores NOT)
+        terms = []  # Lista de términos parseados de la consulta (pueden ser palabras, frases o NOT)
         i = 0
         length = len(query)
         
-        # Fase 1: Parsear la cadena de consulta en términos
+        # --- Fase 1: Parseo de la consulta ---
         while i < length:
-            # Saltar espacios
+            # Ignora espacios en blanco
             while i < length and query[i] == ' ':
                 i += 1
             if i >= length:
                 break
 
-            # Detectar operador NOT
+            # Detecta el operador NOT
             if query[i:i+3].upper() == 'NOT':
                 terms.append(('NOT', None))
                 i += 3
                 continue
 
-            # Detectar frase entre comillas
+            # Detecta frases entre comillas
             if query[i] == '"':
                 j = i + 1
                 while j < length and query[j] != '"':
                     j += 1
                 phrase = query[i+1:j]
-                terms.append(('PHRASE', self.tokenize(phrase)))  # Tokenizar frase completa
+                terms.append(('PHRASE', self.tokenize(phrase)))  # Tokeniza la frase completa
                 i = j + 1
             else:
-                # Detectar término simple
+                # Detecta términos individuales (palabras)
                 j = i
                 while j < length and query[j] not in (' ', '"'):
                     j += 1
@@ -578,24 +597,27 @@ class SAR_Indexer:
                 if term.upper() == 'NOT':
                     terms.append(('NOT', None))
                 else:
-                    terms.append(('TERM', self.tokenize(term)[0]))  # Tokenizar término individual
+                    # Tokeniza el término individual y lo añade
+                    tokens = self.tokenize(term)
+                    if tokens:
+                        terms.append(('TERM', tokens[0]))
                 i = j
 
-        result = None             # Almacena el conjunto de documentos que satisfacen la consulta
-        negate_next = False       # Bandera para saber si el siguiente término debe ser negado
+        result = None  # Conjunto de artículos que cumplen la consulta
 
-        # Fase 2: Evaluar la consulta en base a los términos parseados
+        # --- Fase 2: Evaluación de la consulta ---
         i = 0
         while i < len(terms):
             kind, value = terms[i]
 
             if kind == 'NOT':
+                # El operador NOT debe ir seguido de un término o frase
                 if i+1 >= len(terms):
                     raise ValueError("NOT sin término a negar")
                 
                 next_kind, next_value = terms[i+1]
 
-                # Obtener postings según el tipo de término a negar
+                # Obtiene los artículos que contienen el término/frase a negar
                 if next_kind == 'PHRASE':
                     posting = self.get_positionals(next_value)
                 elif next_kind == 'TERM':
@@ -603,25 +625,24 @@ class SAR_Indexer:
                 else:
                     raise ValueError("Elemento inválido después de NOT")
 
-                # El universo son todos los artículos o los resultados acumulados hasta ahora
+                # El universo es el conjunto de artículos actuales o todos si es el primer término
                 universe = set(result) if result is not None else set(self.articles.keys())
-                negated = sorted(universe - set(posting))  # Diferencia de conjuntos
+                negated = sorted(universe - set(posting))  # Elimina los artículos que contienen el término/frase
 
-                # Actualizar resultados acumulados
-                if result is None:
-                    result = negated
-                else:
-                    result = self.and_posting(result, negated)
+                # Actualiza el resultado acumulado
+                result = negated
 
-                i += 2  # Avanzar dos posiciones (NOT + término)
+                i += 2  # Salta el NOT y el término/frase siguiente
             else:
-                # Obtener postings según el tipo de término (frase o palabra)
+                # Obtiene los artículos que contienen el término o la frase
                 if kind == 'PHRASE':
                     posting = self.get_positionals(value)
                 elif kind == 'TERM':
                     posting = self.get_posting(value)
+                else:
+                    posting = []
 
-                # Primera asignación o intersección con resultados anteriores
+                # Si es el primer término, inicializa el resultado; si no, hace intersección (AND)
                 if result is None:
                     result = posting
                 else:
@@ -629,7 +650,12 @@ class SAR_Indexer:
 
                 i += 1
 
-        return result, []  # Devuelve la lista de documentos resultantes y una lista vacía (posiblemente para errores)
+        # Si está activado el reranking semántico, reordena los resultados obtenidos por consulta booleana
+        if self.semantic_ranking and result:
+            result = self.semantic_reranking(query, result)
+
+        # Devuelve la lista de artículos que cumplen la consulta y una lista vacía (para posibles errores)
+        return result if result is not None else [], []
 
 
 
