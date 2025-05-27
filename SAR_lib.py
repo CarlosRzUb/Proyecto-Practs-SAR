@@ -532,9 +532,7 @@ class SAR_Indexer:
         if self.semantic:
             # Obtener resultados semánticos
             semantic_results = self.solve_semantic_query(query)
-            # Reordenar los resultados
-            reranked_results = self.semantic_reranking(query, semantic_results)
-            return reranked_results, []
+            return semantic_results, []
         
     # Si la consulta está vacía, no hay resultados que devolver
         if not query:
